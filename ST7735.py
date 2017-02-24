@@ -21,11 +21,11 @@
 # THE SOFTWARE.
 import numbers
 import time
+import RPi.GPIO as GPIO
+import spidev as SPI
 
 from PIL import Image, ImageDraw, ImageFont
 
-import Adafruit_GPIO as GPIO
-import Adafruit_GPIO.SPI as SPI
 
 #constants
 DELAY = 0x80
@@ -87,10 +87,11 @@ ST7735_MADCTL_RGB = 0x00
 ST7735_MADCTL_BGR = 0x08
 ST7735_MADCTL_MH = 0x04
 
-def color565(r, g, b):
+def color565(r,g,b):
 	"""Convert red, green, blue components to a 16-bit 565 RGB value. Components
 	should be values 0 to 255.
 	"""
+	# r, g, b = rgb
 	return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
 def color_rgb(color):
@@ -103,7 +104,7 @@ def color_rgb(color):
 class ST7735(object):
 	"""Representation of an ST7735 TFT LCD."""
 
-	def __init__(self, spi, rst=4, ce=5, dc=16, gpio=None, offset=0, c_mode='RGB'):
+	def __init__(self, dc, rst, offset=0, c_mode='RGB'):
 		"""Create an instance of the display using SPI communication.  Must
 		provide the GPIO pin number for the D/C pin and the SPI driver.  Can
 		optionally provide the GPIO pin number for the reset pin as the rst
@@ -111,21 +112,22 @@ class ST7735(object):
 		"""
 		self._dc = dc
 		self._rst = rst
-		self._spi = spi
-		self._gpio = gpio
+		self._spi = spi=SPI.SpiDev()
+		self._gpio = GPIO
 		self.width = ST7735_TFTWIDTH
 		self.height = ST7735_TFTHEIGHT
-		if self._gpio is None:
-		    self._gpio = GPIO.get_platform_gpio()
+		self._gpio.setmode(GPIO.BCM)
 		# Set DC as output.
 		self._gpio.setup(dc, GPIO.OUT)
 		# Setup reset as output (if provided).
 		if rst is not None:
 		    self._gpio.setup(rst, GPIO.OUT)
+			
 		# Set SPI to mode 0, MSB first.
-		spi.set_mode(0)
-		spi.set_bit_order(SPI.MSBFIRST)
-		spi.set_clock_hz(64000000)
+		spi.open(0,0)
+		spi.mode = 0
+		spi.max_speed_hz = 32000000
+
 		# Create an image buffer.
 		self.buffer = bytearray(self.width*self.height*2)
 		self._row = 0
@@ -153,7 +155,7 @@ class ST7735(object):
 		# Write data a chunk at a time.
 		for start in range(0, len(data), chunk_size):
 		    end = min(start+chunk_size, len(data))
-		    self._spi.write(data[start:end])
+		    self._spi.writebytes(data[start:end])
 
 	def command(self, data):
 		"""Write a byte or array of bytes to the display as command data."""
@@ -166,11 +168,11 @@ class ST7735(object):
 	def reset(self):
 		"""Reset the display, if reset pin is connected."""
 		if self._rst is not None:
-		    self._gpio.set_high(self._rst)
+		    self._gpio.output(self._rst, GPIO.HIGH)
 		    time.sleep(0.005)
-		    self._gpio.set_low(self._rst)
+		    self._gpio.output(self._rst, GPIO.LOW)
 		    time.sleep(0.02)
-		    self._gpio.set_high(self._rst)
+		    self._gpio.output(self._rst, GPIO.HIGH)
 		    time.sleep(0.150)
 
 	def _init(self):
